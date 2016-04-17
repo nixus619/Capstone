@@ -1,0 +1,135 @@
+sudo apt-get update
+sudo apt-get install bluez pulseaudio-module-bluetooth python-gobject python-gobject-2
+
+sudo usermod -a -G lp pi
+
+sudo nano /etc/bluetooth/audio.conf
+
+Enable=Source,Sink,Media,Socket
+
+sudo nano /etc/pulse/daemon.conf
+
+sudo nano /etc/pulse/daemon.conf
+
+sudo reboot
+
+sudo hciconfig -a
+
+   hci0:   Type: BR/EDR  Bus: USB
+   BD Address: XX:XX:XX:XX:XX:XX  ACL MTU: 192:8  SCO MTU: 64:8
+   UP RUNNING PSCAN 
+   RX bytes:2035 acl:0 sco:0 events:119 errors:0
+   TX bytes:467 acl:0 sco:0 commands:50 errors:0
+   Features: 0xff 0xff 0x8f 0xf8 0x18 0x18 0x00 0x80
+   Packet type: DM1 DM3 DM5 DH1 DH3 DH5 HV1 HV2 HV3 
+   Link policy: RSWITCH HOLD SNIFF PARK 
+   Link mode: SLAVE ACCEPT 
+   Name: 'raspberryMedia'
+   Class: 0x4e0100
+   Service Classes: Networking, Rendering, Capturing, Telephony
+   Device Class: Computer, Uncategorized
+   HCI Version: 1.2 (0x2)  Revision: 0x7c5
+   LMP Version: 1.2 (0x2)  Subversion: 0x7c5
+   Manufacturer: Cambridge Silicon Radio (10)
+   
+sudo nano /var/lib/bluetooth/XX:XX:XX:XX:XX:XX/config
+
+sudo nano /etc/bluetooth/main.conf
+
+sudo hcitool scan
+
+sudo l2ping XX:XX:XX:XX:XX:XX
+
+sudo hcitool cc XX:XX:XX:XX:XX:XX
+
+sudo hciconfig hci0 piscan
+
+UP RUNNING PSCAN ISCAN
+
+bluez-simple-agent
+
+bluez-test-device trusted XX:XX:XX:XX:XX:XX yes
+
+pactl list sources short
+
+
+0   
+alsa_output.platform-bcm2835_AUD0.0.analog-stereo.monitor    
+module-alsa-card.c   
+s16le 2ch 44100Hz 
+SUSPENDED
+  
+   1
+   bluez_source.XX_XX_XX_XX_XX_XX   
+   module-bluetooth-device.c 
+   s16le 2ch 44100Hz  
+   SUSPENDED
+   
+   pactl list sinks short
+   
+   0  
+   alsa_output.platform-bcm2835_AUD0.0.analog-stereo  
+   module-alsa-card.c  
+   s16le 2ch 44100Hz  
+   SUSPENDED
+   
+   pactl load-module module-loopback source=bluez_source.XX_XX_XX_XX_XX_XX sink=alsa_output.platform-bcm2835_AUD0.0.analog-stereo
+   
+   amixer cset numid=3 1
+   
+      amixer set Master 100%
+   pacmd set-sink-volume 0 65537
+   
+   sudo nano /etc/default/pulseaudio
+   
+      PULSEAUDIO_SYSTEM_START=1
+   DISALLOW_MODULE_LOADING=0
+   
+   sudo adduser pi pulse-access
+   
+   sudo nano /etc/pulse/client.conf
+   
+   sudo nano /etc/pulse/client.conf
+   
+      allow-module-loading = yes
+   load-default-script-file = yes
+   default-script-file = /etc/pulse/default.pa
+   
+   sudo nano /etc/dbus-1/system.d/pulseaudio-system.conf
+   
+   <policy user="pulse">
+      <allow own="org.pulseaudio.Server"/>
+      <allow send_destination="org.bluez"/>
+      <allow send_interface="org.bluez.Manager"/>
+</policy>
+
+#!/bin/bash
+
+#This script looks for a bluetooth audio source and launch the pulse audio loopback module if necessary
+
+#log traces :
+#date=$(date "+%Hh%Mm%Ss")
+#echo "Script Exec "$date
+
+bluetoothSource=$(pactl list sources short | grep bluez_source)
+
+read loopbackStatus < /home/pi/pulseAudioBluetooth/bluetoothLoopbackStatus.txt
+
+if [[ $bluetoothSource != "" ]] && [[ $loopbackStatus == "0" ]]
+then
+   source=${bluetoothSource:2:30}
+   pactl load-module module-loopback source=$source sink=alsa_output.platform-bcm2835_AUD0.0.analog-stereo
+   echo "1" > /home/pi/pulseAudioBluetooth/bluetoothLoopbackStatus.txt
+   #echo "command launched"
+
+else
+   if [[ $bluetoothSource == "" ]] && [[ $loopbackStatus == "1" ]]
+   then
+      echo "0" > /home/pi/pulseAudioBluetooth/bluetoothLoopbackStatus.txt
+      #echo "reset loopbackStatus"
+   fi
+fi
+
+
+   # automatically load loopback for new bluetooth devices (check every minute)
+   * * * * * /home/pi/pulseAudioBluetooth/checkForBluetoothDevice.sh  >> /home/pi/pulseAudioBluetooth/cron.log 2>&1
